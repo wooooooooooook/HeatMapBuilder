@@ -35,12 +35,6 @@ jobs:
             platform: linux/amd64
           - ha_arch: aarch64
             platform: linux/arm64
-          - ha_arch: armv7
-            platform: linux/arm/v7
-          - ha_arch: armhf
-            platform: linux/arm/v6
-          - ha_arch: i386
-            platform: linux/386
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
@@ -87,14 +81,11 @@ jobs:
       - name: Publish multi-arch manifests
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
-          IMAGES="nubiz/heatmapbuilder:latest-amd64 nubiz/heatmapbuilder:latest-aarch64 nubiz/heatmapbuilder:latest-armv7 nubiz/heatmapbuilder:latest-armhf nubiz/heatmapbuilder:latest-i386"
+          IMAGES="nubiz/heatmapbuilder:latest-amd64 nubiz/heatmapbuilder:latest-aarch64"
           docker buildx imagetools create -t nubiz/heatmapbuilder:latest $IMAGES
           docker buildx imagetools create -t nubiz/heatmapbuilder:${VERSION} \
             nubiz/heatmapbuilder:${VERSION}-amd64 \
-            nubiz/heatmapbuilder:${VERSION}-aarch64 \
-            nubiz/heatmapbuilder:${VERSION}-armv7 \
-            nubiz/heatmapbuilder:${VERSION}-armhf \
-            nubiz/heatmapbuilder:${VERSION}-i386
+            nubiz/heatmapbuilder:${VERSION}-aarch64
 
   sync-addon-repo:
     needs: publish-manifest
