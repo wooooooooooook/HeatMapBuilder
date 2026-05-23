@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 from typing import Dict, Tuple
 from jsonDB import JsonDB
 import time
@@ -17,12 +18,14 @@ class ConfigManager:
         """경로 초기화"""
         base_path = '/data'
         media_path = os.path.join('/homeassistant', 'www', 'HeatMapBuilder')
+        legacy_maps_path = os.path.join(base_path, 'maps.json')
         if self.is_local:
             base_path = os.path.join('local','temp')
             media_path = os.path.join(base_path,'HeatMapBuilder')
+            legacy_maps_path = os.path.join(base_path, 'maps.json')
 
         paths = {
-            'maps': os.path.join(base_path, 'maps.json'),  # 맵 데이터베이스 파일
+            'maps': os.path.join(media_path, 'maps.json'),  # 맵 데이터베이스 파일
             'log': os.path.join(base_path, 'thermomap.log'),
             'config': os.path.join(base_path, 'options.json'),
             'media': media_path
@@ -35,7 +38,16 @@ class ConfigManager:
             else:
                 os.makedirs(path, exist_ok=True)
 
+        self._migrate_maps_db(legacy_maps_path, paths['maps'])
         return paths
+
+    def _migrate_maps_db(self, legacy_path: str, maps_path: str) -> None:
+        """기존 /data/maps.json을 www/HeatMapBuilder/maps.json으로 이전합니다."""
+        if legacy_path == maps_path:
+            return
+        if os.path.exists(maps_path) or not os.path.exists(legacy_path):
+            return
+        shutil.copy2(legacy_path, maps_path)
 
     def get_mock_data(self) -> Dict:
         """개발 환경용 mock 데이터 반환"""
