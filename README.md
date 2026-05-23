@@ -12,6 +12,6 @@ Add the HAaddons repository to the Home Assistant add-on store:
 https://github.com/wooooooooooook/HAaddons
 ```
 
-## Add-on Sync
+## Add-on Deployment
 
-The add-on package is maintained in [`hassio-addon`](hassio-addon/). Pushes to `main` sync that directory to `wooooooooooook/HAaddons/HeatMapBuilder` via GitHub Actions.
+The add-on source is maintained in [`hassio-addon`](hassio-addon/). Pushes to `main` build and publish the Docker image, then sync the add-on metadata to `wooooooooooook/HAaddons/HeatMapBuilder` via GitHub Actions.

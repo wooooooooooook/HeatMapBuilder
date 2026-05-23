@@ -1,13 +1,103 @@
-name: Sync Add-on to HAaddons
+name: Deploy Add-on
 
 on:
   push:
     branches:
       - main
+    paths:
+      - '.github/workflows/sync-addon.yml'
+      - 'hassio-addon/**'
   workflow_dispatch:
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Read add-on version
+        id: version
+        run: |
+          VERSION=$(python -c "import json; print(json.load(open('hassio-addon/config.json', encoding='utf-8'))['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ha_arch: amd64
+            platform: linux/amd64
+          - ha_arch: aarch64
+            platform: linux/arm64
+          - ha_arch: armv7
+            platform: linux/arm/v7
+          - ha_arch: armhf
+            platform: linux/arm/v6
+          - ha_arch: i386
+            platform: linux/386
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ${{ matrix.ha_arch }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./hassio-addon
+          file: ./hassio-addon/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: |
+            nubiz/heatmapbuilder:${{ needs.prepare.outputs.version }}-${{ matrix.ha_arch }}
+            nubiz/heatmapbuilder:latest-${{ matrix.ha_arch }}
+          build-args: |
+            BUILD_ARCH=${{ matrix.ha_arch }}
+          cache-from: type=gha,scope=heatmapbuilder-${{ matrix.ha_arch }}
+          cache-to: type=gha,mode=max,scope=heatmapbuilder-${{ matrix.ha_arch }}
+
+  publish-manifest:
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Publish multi-arch manifests
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          IMAGES="nubiz/heatmapbuilder:latest-amd64 nubiz/heatmapbuilder:latest-aarch64 nubiz/heatmapbuilder:latest-armv7 nubiz/heatmapbuilder:latest-armhf nubiz/heatmapbuilder:latest-i386"
+          docker buildx imagetools create -t nubiz/heatmapbuilder:latest $IMAGES
+          docker buildx imagetools create -t nubiz/heatmapbuilder:${VERSION} \
+            nubiz/heatmapbuilder:${VERSION}-amd64 \
+            nubiz/heatmapbuilder:${VERSION}-aarch64 \
+            nubiz/heatmapbuilder:${VERSION}-armv7 \
+            nubiz/heatmapbuilder:${VERSION}-armhf \
+            nubiz/heatmapbuilder:${VERSION}-i386
+
   sync-addon-repo:
+    needs: publish-manifest
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
@@ -26,7 +116,19 @@ jobs:
         run: |
           rm -rf target/HeatMapBuilder
           mkdir -p target/HeatMapBuilder
-          cp -a source/hassio-addon/. target/HeatMapBuilder/
+          cp source/hassio-addon/config.json target/HeatMapBuilder/
+          cp source/hassio-addon/README.md target/HeatMapBuilder/
+          cp source/hassio-addon/CHANGELOG.md target/HeatMapBuilder/
+          cp source/hassio-addon/icon.png target/HeatMapBuilder/
+          cp source/hassio-addon/logo.png target/HeatMapBuilder/
+
+          if [ -d source/hassio-addon/img ]; then
+            cp -a source/hassio-addon/img target/HeatMapBuilder/
+          fi
+
+          if [ -d source/hassio-addon/translations ]; then
+            cp -a source/hassio-addon/translations target/HeatMapBuilder/
+          fi
 
           cd target
           if [[ -n $(git status -s) ]]; then
