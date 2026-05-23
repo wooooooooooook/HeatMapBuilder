@@ -1,0 +1,40 @@
+name: Sync Add-on to HAaddons
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sync-addon-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Checkout HAaddons
+        uses: actions/checkout@v4
+        with:
+          repository: wooooooooooook/HAaddons
+          token: ${{ secrets.ADDONS_REPO_TOKEN }}
+          path: target
+
+      - name: Sync HeatMapBuilder Add-on
+        run: |
+          rm -rf target/HeatMapBuilder
+          mkdir -p target/HeatMapBuilder
+          cp -a source/hassio-addon/. target/HeatMapBuilder/
+
+          cd target
+          if [[ -n $(git status -s) ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add .
+            git commit -m "Update HeatMapBuilder addon from source"
+            git push
+          else
+            echo "No changes to sync."
+          fi
