@@ -1,5 +1,8 @@
 # Changelog
 
+[0.4.2]
+- arm64(aarch64) 아키텍처 환경 빌드 속도 대폭 향상 (numpy, scipy, matplotlib, shapely, pillow 등의 무거운 패키지들을 Alpine pre-compiled 패키지로 설치하도록 변경)
+
 [0.4.1]
 - 이미지 캐싱 등으로 인해 발생하는 로드 레이스 컨디션 및 TypeError 에러 수정 (Cannot read properties of null (reading 'style') 해결)
 - 레이블 아이콘 설정이 없는 경우(null) 발생하는 센서 불러오기 실패 오류 수정

@@ -7,7 +7,8 @@ ENV TZ=Asia/Seoul
 ENV S6_LOGGING=0
 ENV S6_VERBOSITY=0
 
-RUN apk add --no-cache tzdata git musl-locales gcc musl-dev fontconfig ninja g++ jpeg-dev zlib-dev libjpeg make freetype-dev
+RUN apk add --no-cache tzdata git musl-locales gcc musl-dev fontconfig ninja g++ jpeg-dev zlib-dev libjpeg make freetype-dev \
+    py3-numpy py3-pillow py3-scipy py3-matplotlib py3-shapely
 
 # 나눔고딕 폰트 설치
 COPY fonts/NanumGothic.ttf /tmp/NanumGothic.ttf
@@ -26,11 +27,11 @@ RUN cp /usr/share/zoneinfo/$TZ /etc/localtime && \
 COPY apps /apps
 
 COPY requirements.txt /requirements.txt
-RUN python -m pip install -r /requirements.txt
+RUN python -m pip install --break-system-packages -r /requirements.txt
 
 
 # 개발 환경 관련 패키지 설치
-RUN pip install watchdog
+RUN pip install --break-system-packages watchdog
 
 WORKDIR /apps
 ENV PYTHONPATH=/apps
