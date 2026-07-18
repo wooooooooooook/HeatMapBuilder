@@ -116,7 +116,12 @@ class SensorManager:
                             'labels': entity_registry_dict[entity_id].get('labels', []),
                             'area_id': entity_registry_dict[entity_id].get('area_id')
                         })
-                        filtered_states.append(state)
+                    else:
+                        state.update({
+                            'labels': [],
+                            'area_id': None
+                        })
+                    filtered_states.append(state)
                 except (ValueError, TypeError):
                     # 숫자가 아닌 상태값은 무시
                     continue

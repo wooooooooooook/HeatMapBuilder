@@ -139,8 +139,9 @@ export class SensorManager {
             labelRegistry.forEach(label => {
                 const option = document.createElement('div');
                 option.className = 'option px-2 py-1.5 hover:bg-gray-100 cursor-pointer flex items-center text-xs';
+                const iconClass = label.icon ? label.icon.replace('mdi:', 'mdi-') : 'mdi-tag';
                 option.innerHTML = `
-                    <i class="mdi ${label.icon.replace('mdi:', 'mdi-')} mr-2"></i>
+                    <i class="mdi ${iconClass} mr-2"></i>
                     <span>${label.name}</span>
                 `;
                 option.dataset.value = label.label_id;
@@ -204,6 +205,7 @@ export class SensorManager {
 
             this.updateSensorList();
         } catch (error) {
+            console.error('Failed to load sensors:', error);
             this.uiManager.showMessage('센서를 불러오는데 실패했습니다.', 'error');
         }
     }
