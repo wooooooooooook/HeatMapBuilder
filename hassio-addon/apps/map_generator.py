@@ -193,11 +193,12 @@ class MapGenerator:
             self.logger.error(traceback.format_exc())
             return [], None
 
-    async def _collect_sensor_data(self, states_dict: Dict[str, Dict[str, Any]]) -> Tuple[List[List[float]], List[float], List[str]]:
-        """센서 데이터를 수집하여 좌표, 온도값, 센서ID 리스트를 반환합니다."""
+    async def _collect_sensor_data(self, states_dict: Dict[str, Dict[str, Any]]) -> Tuple[List[List[float]], List[float], List[str], List[Tuple[List[float], str, Dict[str, Any]]]]:
+        """센서 데이터를 수집하여 좌표, 온도값, 센서ID 리스트, 사용할 수 없는 센서 리스트를 반환합니다."""
         points = []
         temperatures = []
         sensor_ids = []
+        unavailable_sensors = []
         
         self.logger.debug("상태조회 대상 센서 %s개", 
                           self.logger._colorize(len(self.sensors_data), "blue"))
@@ -212,7 +213,13 @@ class MapGenerator:
                                     self.logger._colorize(sensor['entity_id'], "red"))
                 continue
                 
-            state = states_dict.get(sensor['entity_id'], {'state': '0', 'entity_id': sensor['entity_id']})
+            state = states_dict.get(sensor['entity_id'])
+            if state is None:
+                self.logger.warning("%s 센서의 상태를 가져올 수 없습니다",
+                                    self.logger._colorize(sensor['entity_id'], "red"))
+                unavailable_state = {'state': 'unavailable', 'entity_id': sensor['entity_id']}
+                unavailable_sensors.append(([position['x'], position['y']], sensor['entity_id'], unavailable_state))
+                continue
             
             try:
                 # 온도값 파싱 및 보정값 적용
@@ -223,6 +230,7 @@ class MapGenerator:
                     self.logger.warning("%s 센서를 사용할 수 없습니다 (상태: %s)",
                                         self.logger._colorize(sensor['entity_id'], "red"),
                                         self.logger._colorize(raw_state, "yellow"))
+                    unavailable_sensors.append(([position['x'], position['y']], sensor['entity_id'], state))
                     continue
                     
                 raw_temp = float(raw_state)
@@ -244,9 +252,10 @@ class MapGenerator:
                 self.logger.error("센서 %s 데이터 처리 중 오류: %s",
                                  self.logger._colorize(sensor['entity_id'], "red"),
                                  self.logger._colorize(str(e), "red"))
+                unavailable_sensors.append(([position['x'], position['y']], sensor['entity_id'], {'state': 'error', 'entity_id': sensor['entity_id']}))
                 continue
         
-        return points, temperatures, sensor_ids
+        return points, temperatures, sensor_ids, unavailable_sensors
 
     def _assign_sensors_to_areas(self, points: List[List[float]], temperatures: List[float], sensor_ids: List[str]):
         """센서들을 해당하는 area에 할당합니다."""
@@ -613,6 +622,133 @@ class MapGenerator:
         except Exception as e:
             self.logger.error(f"센서 마커 생성 중 오류 발생: {str(e)}")
 
+    def _create_warning_marker(self, point, sensor_id, state):
+        """사용할 수 없는 센서에 대해 경고 아이콘(삼각형 경고판)을 생성합니다."""
+        try:
+            # 센서 표시 설정 가져오기
+            sensor_display = self.gen_config.get('visualization', {}).get('sensor_display', 'position_temp')
+            sensor_info_bg = self.gen_config.get('visualization', {}).get('sensor_info_bg', {})
+            sensor_marker = self.gen_config.get('visualization', {}).get('sensor_marker', {})
+            
+            # 마커 크기 설정 (기본값 12 혹은 기존 marker_size 사용)
+            marker_size = sensor_marker.get('size', 10)
+            warning_size = max(12, marker_size)
+            
+            # 삼각형 경고판 그리기 (노란색/주황색 채우기, 검은색 테두리)
+            # y축이 invert되어 있으므로, point[1] - warning_size/2 가 위쪽 꼭짓점
+            vertices = np.array([
+                [point[0], point[1] - warning_size/2],
+                [point[0] + warning_size/2, point[1] + warning_size/2],
+                [point[0] - warning_size/2, point[1] + warning_size/2]
+            ])
+            
+            # 경고판 (채우기는 주황색, 테두리는 검은색)
+            warning_color = '#FFA500'  # Orange warning color
+            marker = patches.Polygon(vertices, facecolor=warning_color, edgecolor='#000000', linewidth=1.5)
+            marker.set_zorder(5)
+            plt.gca().add_artist(marker)
+            
+            # 삼각형 가운데 느낌표(!) 텍스트 추가
+            plt.text(point[0], point[1] + warning_size/6, '!',
+                     horizontalalignment='center',
+                     verticalalignment='center',
+                     fontsize=warning_size * 0.8,
+                     fontweight='bold',
+                     color='#000000',
+                     zorder=6)
+            
+            # 텍스트 표시 설정 (센서 이름 및 상태)
+            if sensor_display != 'none' and sensor_display != 'position':
+                name = state.get('attributes', {}).get('friendly_name', sensor_id.split('.')[-1])
+                text = ''
+                
+                # 폰트 설정
+                font_size = self.gen_config.get('visualization', {}).get('sensor_font', {}).get('font_size', 9)
+                font_color = self.gen_config.get('visualization', {}).get('sensor_font', {}).get('color', '#000000')
+                
+                if 'name' in sensor_display:
+                    text = name
+                
+                if 'temp' in sensor_display:
+                    if text:
+                        text += '\n'
+                    state_str = state.get('state', 'unavailable')
+                    text += f'{state_str}'
+
+                # 텍스트 줄 수 계산
+                line_count = text.count('\n') + 1
+
+                # 배경 설정
+                bg_color = sensor_info_bg.get('color', '#FFFFFF')
+                bg_opacity = sensor_info_bg.get('opacity', 70) / 100
+                bg_padding = sensor_info_bg.get('padding', 5)
+                bg_border_radius = sensor_info_bg.get('border_radius', 4)
+                bg_border_width = sensor_info_bg.get('border_width', 1)
+                bg_border_color = sensor_info_bg.get('border_color', '#000000')
+                bg_position = sensor_info_bg.get('position', 'right')
+                bg_distance = sensor_info_bg.get('distance', 10)
+
+                # 텍스트 위치 계산
+                text_x, text_y = point[0], point[1]
+                if bg_position == 'right':
+                    text_x = point[0] + warning_size/2 + bg_distance
+                    text_y = point[1]
+                elif bg_position == 'left':
+                    text_x = point[0] - warning_size/2 - bg_distance
+                    text_y = point[1]
+                elif bg_position == 'top':
+                    text_x = point[0]
+                    text_y = point[1] - warning_size/2 - bg_distance
+                elif bg_position == 'bottom':
+                    text_x = point[0]
+                    text_y = point[1] + warning_size/2 + bg_distance
+                elif bg_position == 'top-right':
+                    text_x = point[0] + warning_size/2 + bg_distance/1.4
+                    text_y = point[1] - warning_size/2 - bg_distance/1.4
+                elif bg_position == 'top-left':
+                    text_x = point[0] - warning_size/2 - bg_distance/1.4
+                    text_y = point[1] - warning_size/2 - bg_distance/1.4
+                elif bg_position == 'bottom-right':
+                    text_x = point[0] + warning_size/2 + bg_distance/1.4
+                    text_y = point[1] + warning_size/2 + bg_distance/1.4
+                elif bg_position == 'bottom-left':
+                    text_x = point[0] - warning_size/2 - bg_distance/1.4
+                    text_y = point[1] + warning_size/2 + bg_distance/1.4
+
+                # 텍스트 정렬 설정
+                halign = 'center'
+                valign = 'center'
+                if 'right' in bg_position:
+                    halign = 'left'
+                elif 'left' in bg_position:
+                    halign = 'right'
+                if 'top' in bg_position:
+                    valign = 'bottom'
+                elif 'bottom' in bg_position:
+                    valign = 'top'
+                
+                # 박스 높이 계산
+                box_height = (font_size * 1.2 * line_count) + (bg_padding * 2)
+                
+                # 텍스트 추가
+                plt.text(text_x, text_y, text,
+                        horizontalalignment=halign,
+                        verticalalignment=valign,
+                        fontsize=font_size,
+                        color=font_color,
+                        bbox=dict(
+                            facecolor=bg_color,
+                            alpha=bg_opacity,
+                            edgecolor=bg_border_color if bg_border_width > 0 else 'none',
+                            linewidth=bg_border_width,
+                            pad=bg_padding,
+                            boxstyle='square,pad={:.1f}'.format(bg_padding/10) if bg_border_radius == 0 else 'round,pad={:.1f},rounding_size={:.1f}'.format(bg_padding/10, min(bg_border_radius/10, box_height/20))
+                        ),
+                        zorder=6)
+
+        except Exception as e:
+            self.logger.error(f"경고 마커 생성 중 오류 발생: {str(e)}")
+
     def _calculate_temperature_range(self,temperatures, colorbar_config):
         """자동 범위 설정이 활성화된 경우 센서 데이터를 기반으로 온도 범위를 계산합니다."""
         if not colorbar_config.get('auto_range', False):
@@ -846,7 +982,7 @@ class MapGenerator:
                 return {'success': False, 'error': error_msg, 'time': '', 'duration': ''}
 
             # 센서 데이터 수집 (states_dict 전달)
-            sensor_points, raw_temps, sensor_ids = await self._collect_sensor_data(states_dict)
+            sensor_points, raw_temps, sensor_ids, unavailable_sensors = await self._collect_sensor_data(states_dict)
             if not sensor_points:
                 error_msg = "유효한 센서 데이터가 없습니다"
                 self.logger.error(error_msg)
@@ -1035,6 +1171,14 @@ class MapGenerator:
                             self._create_sensor_marker([point[0], point[1]], temperature, sensor_id, state)
                         except Exception as e:
                             self.logger.error(f"센서 {sensor_id} 표시 실패: {str(e)}")
+                            continue
+                    
+                    # 사용할 수 없는 센서에 경고 마커 생성
+                    for point, sensor_id, state in unavailable_sensors:
+                        try:
+                            self._create_warning_marker([point[0], point[1]], sensor_id, state)
+                        except Exception as e:
+                            self.logger.error(f"센서 {sensor_id} 경고 표시 실패: {str(e)}")
                             continue
                 self.logger.trace("센서 표시 완료")
 
